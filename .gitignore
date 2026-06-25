@@ -6,3 +6,5 @@
 .DS_Store
 target/
 out/
+DESCRIPTION.md
+REVIEW_ISSUES.md
