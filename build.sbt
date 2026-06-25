@@ -51,7 +51,17 @@ lazy val publishSettings = Seq(
   publishTo := Some(
     "GitHub Packages" at s"https://maven.pkg.github.com/pyal/${name.value}"
   ),
-  credentials += Credentials(Path.userHome / ".sbt" / ".github-credentials"),
+  credentials ++= {
+    val envToken = sys.env.get("GITHUB_TOKEN").filter(_.nonEmpty).map { token =>
+      Credentials("GitHub Packages", "maven.pkg.github.com", "pyal", token)
+    }
+    val fileCreds = {
+      val credFile = Path.userHome / ".sbt" / ".github-credentials"
+      if (credFile.exists) Seq(Credentials(credFile))
+      else Seq.empty
+    }
+    envToken.toSeq ++ fileCreds
+  },
   publishMavenStyle := true,
 )
 
