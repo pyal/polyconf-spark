@@ -47,8 +47,16 @@ lazy val commonSettings = Seq(
   ),
 )
 
+lazy val publishSettings = Seq(
+  publishTo := Some(
+    "GitHub Packages" at s"https://maven.pkg.github.com/pyal/${name.value}"
+  ),
+  credentials += Credentials(Path.userHome / ".sbt" / ".github-credentials"),
+  publishMavenStyle := true,
+)
+
 lazy val `polyconf-spark` = (project in file("."))
-  .settings(commonSettings, name := "polyconf-spark")
+  .settings(commonSettings, publishSettings, name := "polyconf-spark")
   .settings(
     assembly / assemblyMergeStrategy := {
       case "module-info.class"                             => MergeStrategy.discard
