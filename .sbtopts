@@ -1,0 +1,7 @@
+# sbt options for polyconf-spark
+-J-Xmx4G
+-J-Xss4m
+-J-XX:+UseG1GC
+-J-XX:+ParallelRefProcEnabled
+-J-Djline.terminal=jline.UnsupportedTerminal
+-J-Dsbt.log.noformat=true

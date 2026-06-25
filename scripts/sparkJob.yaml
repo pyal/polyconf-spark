@@ -1,0 +1,126 @@
+# =============================================================================
+# Spark job config — CliArgGenerator format for SparkTransformerJob
+#
+# Run from polyconf-spark directory:
+#   cd ../polyconf-spark
+#
+# All classes (runners, transformers, generators, writers) are auto-discovered
+# via SPI + classpath scanning.  No manual registration needed.
+#
+# DataStream-based generators/writers (SimpleDataGenerator, SimpleDataWriter)
+# must be wrapped in StreamDataGenerator/StreamDataWriter adapters when used
+# with SparkTransformerJob (which works with DataFrameData).
+# =============================================================================
+# Usage:
+#
+#   Generate and execute a spark job from YAML (assembly JAR):
+#     ./run.sh run.args --yamlPath scripts/sparkJob.yaml::sparkFilterJob1 --execute
+#
+#   Generate only (print to stdout):
+#     ./run.sh run.args --yamlPath scripts/sparkJob.yaml::sparkFilterJob
+#
+#   Override variables from the command line:
+#     ./run.sh run.args --yamlPath scripts/sparkJob.yaml::sparkFilterJob \
+#       --renameStr "INPUT_DIR--/data/input~~OUTPUT_DIR--/data/output"
+#
+#   Select environment (sand, prod):
+#     ./run.sh run.args --yamlPath scripts/sparkJob.yaml::sparkFilterJob \
+#       --renameStr "Env--prod"
+#
+#   Direct spark-submit with JSON:
+#     SPARK_MASTER=local[1] ./run.sh run.spark \
+#       -j '{"CN":"SparkTransformerJob","generator":{...}}'
+#
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# sparkFilterJob — simple Spark pipeline: read → filter/select → write
+#
+#   Reads CSV files via StreamDataGenerator adapter (wraps SimpleDataGenerator),
+#   transforms via SparkTransformer (DataFrame-native), writes JSON via
+#   StreamDataWriter adapter (wraps SimpleDataWriter).
+# ---------------------------------------------------------------------------
+sparkFilterJob:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        OUTPUT_DIR: /tmp/spark-output
+      local:
+        INPUT_DIR: scripts
+      sand:
+        INPUT_DIR: /data/sand/polyconf/scripts
+      prod:
+        INPUT_DIR: /data/prod/polyconf/scripts
+    defaultEnv: local
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    additionalArgs:
+      - -l
+      - "WARN,TRACE:org.polyconf"
+    jobStr:
+      CN: SparkTransformerJob
+      appName: spark-filter-job
+      generator:
+        CN: StreamDataGenerator
+        delegate:
+          CN: SimpleDataGenerator
+          path: $INPUT_DIR/input.csv
+          format: csv
+      transformers:
+        - CN: SparkBasicTransformer
+          sqlFilter: "age > 25"
+          selectColumns: [name, age, city]
+          repartition: 4
+      writers:
+        - CN: StreamDataWriter
+          delegate:
+            CN: SimpleDataWriter
+            path: $OUTPUT_DIR/filtered.json
+            format: json
+        - CN: SparkStatsWriter
+          showWorkerRows: 20
+
+# ---------------------------------------------------------------------------
+# sparkStreamJob — continuous-style Spark pipeline with multiple transforms
+# ---------------------------------------------------------------------------
+sparkStreamJob:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        OUTPUT_DIR: /tmp/spark-stream-out
+      local:
+        INPUT_DIR: scripts
+      sand:
+        INPUT_DIR: /data/sand/polyconf/scripts
+    defaultEnv: local
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    jobStr:
+      CN: SparkTransformerJob
+      appName: spark-stream-job
+      generator:
+        CN: StreamDataGenerator
+        delegate:
+          CN: SimpleDataGenerator
+          path: $INPUT_DIR
+          format: json
+          options:
+            recursive: "true"
+      transformers:
+        - CN: SparkBasicTransformer
+          selectColumns: [id, name, age, city, timestamp]
+        - CN: SparkBasicTransformer
+          sqlFilter: "age >= 18 AND city IS NOT NULL"
+          repartition: 8
+      writers:
+        - CN: StreamDataWriter
+          delegate:
+            CN: SimpleDataWriter
+            path: $OUTPUT_DIR/adults.json
+            format: json

@@ -1,0 +1,6 @@
+-Xmx4G
+-Xss4m
+-XX:+UseG1GC
+-XX:+ParallelRefProcEnabled
+-Djline.terminal=jline.UnsupportedTerminal
+-Dsbt.log.noformat=true
