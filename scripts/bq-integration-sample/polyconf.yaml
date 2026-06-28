@@ -1,0 +1,364 @@
+# =============================================================================
+# polyconf.yaml — single source of truth for all typed jobs across all envs
+#
+# Uses CliArgGenerator format (Renamer + Formatter + jobStr).
+# Every job is defined here with env-specific defaults. The same config file
+# generates params for all envs via --rename-str Env--<env>.
+#
+# To add a new job: add a top-level key below. No repos, no deployments.
+# =============================================================================
+# Usage:
+#
+#   Generate CLI args for a job:
+#     ./run.sh run.dev.args --yamlPath scripts/bq-configs/polyconf.yaml::bq2bq-sync
+#
+#   Override env (sand/prod):
+#     ./run.sh run.dev.args --yamlPath scripts/bq-configs/polyconf.yaml::bq2bq-sync \
+#       --renameStr "Env--prod"
+#
+#   Execute directly (generate + run):
+#     ./run.sh run.dev.args --yamlPath scripts/bq-configs/polyconf.yaml::bq2bq-sync \
+#       --execute
+#
+#   Generate and save to BQ configs table:
+#     ./scripts/bq-configs/bq-workflow.py bq2bq-sync eng
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# bq2bq-sync — read from one BQ table, transform, write to another
+# ---------------------------------------------------------------------------
+bq2bq-sync:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        BQ_PROJECT: polyconf-$Env
+        BQ_DATASET: events
+        SRC_TABLE: raw_events
+        DST_TABLE: clean_events
+        FILTER: "WHERE lastmodifieddate >= '1970-01-01'"
+      sand:
+        BQ_PROJECT: polyconf-sand
+        BQ_DATASET: events_sandbox
+      prod:
+        FILTER: "WHERE lastmodifieddate >= '2024-01-01'"
+    defaultEnv: eng
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    additionalArgs:
+      - -l
+      - "WARN,ERROR:org.apache,DEBUG:org.polyconf,PrintMaster"
+    jobStr:
+      CN: SparkTransformerJob
+      appName: bq2bq-sync
+      master: local[*]
+      sparkConfig:
+        spark.sql.adaptive.enabled: "true"
+      generator:
+        CN: SparkGeneratorImpl
+        format: bigquery
+        path: $BQ_PROJECT:$BQ_DATASET.$SRC_TABLE
+        options:
+          query: "SELECT * FROM `$BQ_PROJECT.$BQ_DATASET.$SRC_TABLE` $FILTER"
+          temporaryGcsBucket: $BQ_PROJECT-temp
+      transformers:
+        - CN: SparkBasicTransformer
+          sqlFilter: "age > 18"
+          selectColumns: [id, name, age, city, created_at]
+          repartition: 8
+        - CN: SparkStatsWriter
+          showWorkerRows: 5
+      writers:
+        - CN: SparkWriterImpl
+          format: bigquery
+          mode: Overwrite
+          options:
+            writeMethod: indirect
+            temporaryGcsBucket: $BQ_PROJECT-temp
+          path: $BQ_PROJECT:$BQ_DATASET.$DST_TABLE
+
+# ---------------------------------------------------------------------------
+# delta2bq — read Delta Lake from GCS, write to BigQuery
+# ---------------------------------------------------------------------------
+delta2bq:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        DELTA_PATH: gs://polyconf-$Env-backend-store/delta/spog
+        BQ_PROJECT: polyconf-$Env
+        BQ_DATASET: polyconf_datasets
+        BQ_TABLE: spog_import
+      sand:
+        DELTA_PATH: gs://polyconf-data/delta/spog
+        BQ_PROJECT: polyconf-sand
+    defaultEnv: eng
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    additionalArgs:
+      - -l
+      - "WARN,ERROR:org.apache,INFO:org.polyconf,PrintMaster"
+    jobStr:
+      CN: SparkTransformerJob
+      appName: delta2bq-import
+      master: local[*]
+      sparkConfig:
+        spark.sql.adaptive.enabled: "true"
+        spark.databricks.delta.formatCheck.enabled: "false"
+      generator:
+        CN: SparkGeneratorImpl
+        format: delta
+        path: $DELTA_PATH
+      transformers:
+        - CN: SparkBasicTransformer
+          repartition: 32
+      writers:
+        - CN: SparkWriterImpl
+          format: bigquery
+          mode: Overwrite
+          path: $BQ_PROJECT:$BQ_DATASET.$BQ_TABLE
+          options:
+            writeMethod: indirect
+            temporaryGcsBucket: $BQ_PROJECT-temp
+            parallelism: 100
+
+# ---------------------------------------------------------------------------
+# gcs-cleanup — admin job: list GCS files (read then stats)
+# ---------------------------------------------------------------------------
+gcs-cleanup:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        GCS_PATH: gs://polyconf-$Env-staging/tmp
+      prod:
+        GCS_PATH: gs://polyconf-prod-staging/tmp
+    defaultEnv: eng
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    additionalArgs:
+      - -l
+      - "WARN,ERROR:org.apache,INFO:org.polyconf"
+    jobStr:
+      CN: SparkTransformerJob
+      appName: gcs-cleanup
+      master: local[*]
+      generator:
+        CN: SparkGeneratorImpl
+        format: parquet
+        path: $GCS_PATH
+      transformers:
+        - CN: SparkBasicTransformer
+          selectColumns: [path, size, modificationTime]
+          rowLimit: 100
+      writers:
+        - CN: SparkStatsWriter
+          showRows: true
+          showDebugRowsNumber: 20
+
+# ---------------------------------------------------------------------------
+# pubsub-publish — publish messages from GCS files to a Pub/Sub topic
+# ---------------------------------------------------------------------------
+pubsub-publish:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        PUBSUB_PROJECT: polyconf-$Env
+        PUBSUB_TOPIC: events-ingest
+        INPUT_PATH: gs://polyconf-$Env-pubsub/messages
+      sand:
+        PUBSUB_TOPIC: events-ingest-dev
+    defaultEnv: eng
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    additionalArgs:
+      - -l
+      - "WARN,ERROR:org.apache,DEBUG:org.polyconf"
+    jobStr:
+      CN: SparkTransformerJob
+      appName: pubsub-publish
+      master: local[*]
+      generator:
+        CN: SparkGeneratorImpl
+        format: json
+        path: $INPUT_PATH
+      transformers: []
+      writers:
+        - CN: SparkPubsubIO
+          path: $PUBSUB_PROJECT:$PUBSUB_TOPIC:default-sub
+
+# ---------------------------------------------------------------------------
+# full-reindex — full data reindex with no filter (manual trigger)
+# ---------------------------------------------------------------------------
+full-reindex:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        BQ_PROJECT: polyconf-$Env
+        BQ_DATASET: events
+        SRC_TABLE: raw_events
+        DST_TABLE: clean_events
+      sand:
+        BQ_PROJECT: polyconf-sand
+    defaultEnv: eng
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    additionalArgs:
+      - -l
+      - "WARN,ERROR:org.apache,DEBUG:org.polyconf,PrintMaster"
+    jobStr:
+      CN: SparkTransformerJob
+      appName: full-reindex
+      master: local[*]
+      generator:
+        CN: SparkGeneratorImpl
+        format: bigquery
+        path: $BQ_PROJECT:$BQ_DATASET.$SRC_TABLE
+        options:
+          query: "SELECT * FROM `$BQ_PROJECT.$BQ_DATASET.$SRC_TABLE`"
+          temporaryGcsBucket: $BQ_PROJECT-temp
+      transformers:
+        - CN: SparkBasicTransformer
+          repartition: 64
+      writers:
+        - CN: SparkWriterImpl
+          format: bigquery
+          mode: Overwrite
+          path: $BQ_PROJECT:$BQ_DATASET.$DST_TABLE
+          options:
+            writeMethod: indirect
+            temporaryGcsBucket: $BQ_PROJECT-temp
+
+# ---------------------------------------------------------------------------
+# incremental-update — update only recent data (cron job)
+# ---------------------------------------------------------------------------
+incremental-update:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        BQ_PROJECT: polyconf-$Env
+        BQ_DATASET: events
+        SRC_TABLE: raw_events
+        DST_TABLE: clean_events
+        SINCE: "1970-01-01"
+      sand:
+        BQ_PROJECT: polyconf-sand
+    defaultEnv: eng
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    additionalArgs:
+      - -l
+      - "WARN,ERROR:org.apache,INFO:org.polyconf,PrintMaster"
+    jobStr:
+      CN: SparkTransformerJob
+      appName: incremental-update
+      master: local[*]
+      generator:
+        CN: SparkGeneratorImpl
+        format: bigquery
+        path: $BQ_PROJECT:$BQ_DATASET.$SRC_TABLE
+        options:
+          query: "SELECT * FROM `$BQ_PROJECT.$BQ_DATASET.$SRC_TABLE` WHERE lastmodifieddate >= '$SINCE'"
+          temporaryGcsBucket: $BQ_PROJECT-temp
+      transformers:
+        - CN: SparkBasicTransformer
+          repartition: 8
+      writers:
+        - CN: SparkWriterImpl
+          format: bigquery
+          mode: Append
+          path: $BQ_PROJECT:$BQ_DATASET.$DST_TABLE
+          options:
+            writeMethod: indirect
+            temporaryGcsBucket: $BQ_PROJECT-temp
+
+# ---------------------------------------------------------------------------
+# file-sync — copy files between GCS locations via Spark
+# ---------------------------------------------------------------------------
+file-sync:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        SRC_PATH: gs://polyconf-$Env-source/data
+        DST_PATH: gs://polyconf-$Env-dest/backup
+      sand:
+        SRC_PATH: gs://polyconf-data/source
+        DST_PATH: gs://polyconf-data/backup
+    defaultEnv: eng
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    additionalArgs:
+      - -l
+      - "WARN,ERROR:org.apache,INFO:org.polyconf"
+    jobStr:
+      CN: SparkTransformerJob
+      appName: file-sync
+      master: local[*]
+      generator:
+        CN: SparkGeneratorImpl
+        format: parquet
+        path: $SRC_PATH
+      transformers:
+        - CN: SparkBasicTransformer
+          repartition: 16
+      writers:
+        - CN: SparkWriterImpl
+          format: parquet
+          mode: Overwrite
+          path: $DST_PATH
+
+# ---------------------------------------------------------------------------
+# stats-collect — read and show stats for a table
+# ---------------------------------------------------------------------------
+stats-collect:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        BQ_PROJECT: polyconf-$Env
+        BQ_DATASET: events
+        SRC_TABLE: raw_events
+      sand:
+        BQ_PROJECT: polyconf-sand
+    defaultEnv: eng
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    additionalArgs:
+      - -l
+      - "WARN,ERROR:org.apache,INFO:org.polyconf,PrintMaster"
+    jobStr:
+      CN: SparkTransformerJob
+      appName: stats-collect
+      master: local[*]
+      generator:
+        CN: SparkGeneratorImpl
+        format: bigquery
+        path: $BQ_PROJECT:$BQ_DATASET.$SRC_TABLE
+        options:
+          query: "SELECT * FROM `$BQ_PROJECT.$BQ_DATASET.$SRC_TABLE` LIMIT 1000"
+          temporaryGcsBucket: $BQ_PROJECT-temp
+      transformers: []
+      writers:
+        - CN: SparkStatsWriter
+          showRows: true
+          showDebugRowsNumber: 100
