@@ -2,11 +2,6 @@
 # bq-workflow.yaml — workflow definitions for polyconf jobs
 #
 # Defines how to execute every job from polyconf.yaml as a workflow.
-# Each entry references the job in polyconf.yaml and defines:
-#   - Environment variables per env (dev/staging/prod)
-#   - Command to generate CLI args via CliArgGenerator
-#   - Overridable params for manual execution
-#
 # A single general workflow reads the BQ configs table by type and runs it.
 # Cron jobs use default params; manual jobs can override via --rename-str.
 # =============================================================================
@@ -23,17 +18,19 @@
 #       "rename_FILTER": "WHERE lastmodifieddate >= '\''2025-01-01'\''",
 #       "rename_SINCE": "2025-01-01"
 #     }'
-#
-#   Block a job type (set to stub):
-#     ./bq-workflow.py block bq2bq-sync eng
 # =============================================================================
 
 # =============================================================================
 # Variable definitions (shared across workflow commands)
+# Substituted by Python bq-workflow.py via Template.safe_substitute.
 # =============================================================================
 vars:
   all:
-    YAMLPATH: scripts/bq-configs
+    YAMLPATH: scripts/bq-integration-sample
+    DEFAULT_SINCE: "1970-01-01"
+    DEFAULT_BQ_DATASET: events
+    DEFAULT_BQ_TABLE: clean_events
+    DEFAULT_PUBSUB_TOPIC: events-ingest
   eng:
   ver:
   exe:
@@ -42,13 +39,20 @@ vars:
 # =============================================================================
 # Workflow definitions
 # These are the types stored in the BQ configs table.
-#   - description:  human-readable description shown in bq
-#   - command:      shell command to generate args in bq. Usually used
-#                   CliArgGenerator command producing the args string
+#   - description:  human-readable description shown in workflow UI
+#   - command:      CliArgGenerator command producing the args string
 #                   $Environment and $YAMLPATH are substituted at runtime
+#
+# Command format:
+#   run.local Args -y $YAMLPATH/polyconf.yaml -m <job> \
+#     --rename-str Env--$Environment~~VAR1--$VAR1~~VAR2--VALUE2 \
+#     -f bigquery
+#
+#   $Environment / $VAR1 — resolved by Python script
+#   Env--eng / VAR1--val — rename pairs passed to CliArgGenerator
+#   ~~                    — separator between rename pairs
 # =============================================================================
 
-# BQ-to-BQ sync — cron: incremental
 bq2bq-sync:
   description: >
     Sync events from source BQ table to clean table.
@@ -57,9 +61,8 @@ bq2bq-sync:
         "rename_FILTER": "WHERE lastmodifieddate >= '\''1970-01-01'\''",
         "rename_SINCE": "1970-01-01"
       }'
-  command: run.local Args -y $YAMLPATH/polyconf.yaml -m bq2bq-sync --rename-str Env--$Environment -f bigquery
+  command: run.local Args -y $YAMLPATH/polyconf.yaml -m bq2bq-sync --rename-str Env--$Environment~~FILTER--"WHERE lastmodifieddate >= '$DEFAULT_SINCE'" -f bigquery
 
-# Delta to BQ import — full load
 delta2bq:
   description: >
     Import Delta Lake tables to BigQuery.
@@ -69,7 +72,6 @@ delta2bq:
       }'
   command: run.local Args -y $YAMLPATH/polyconf.yaml -m delta2bq --rename-str Env--$Environment -f bigquery
 
-# GCS cleanup — admin
 gcs-cleanup:
   description: >
     List files on GCS.
@@ -79,7 +81,6 @@ gcs-cleanup:
       }'
   command: run.local Args -y $YAMLPATH/polyconf.yaml -m gcs-cleanup --rename-str Env--$Environment -f bigquery
 
-# Full reindex (manual trigger)
 full-reindex:
   description: >
     Full data reindex — no date filter, all data reprocessed.
@@ -90,7 +91,6 @@ full-reindex:
       }'
   command: run.local Args -y $YAMLPATH/polyconf.yaml -m full-reindex --rename-str Env--$Environment -f bigquery
 
-# Incremental update (cron)
 incremental-update:
   description: >
     Incremental update — processes only recent changes.
@@ -99,9 +99,8 @@ incremental-update:
       spark.workflow.run polyconf-bqbased-incremental-update '{
         "rename_SINCE": "2025-06-01"
       }'
-  command: run.local Args -y $YAMLPATH/polyconf.yaml -m incremental-update --rename-str Env--$Environment -f bigquery
+  command: run.local Args -y $YAMLPATH/polyconf.yaml -m incremental-update --rename-str Env--$Environment~~SINCE--$DEFAULT_SINCE -f bigquery
 
-# File sync — admin
 file-sync:
   description: >
     Copy files between GCS locations.
@@ -112,7 +111,6 @@ file-sync:
       }'
   command: run.local Args -y $YAMLPATH/polyconf.yaml -m file-sync --rename-str Env--$Environment -f bigquery
 
-# Stats collect — admin
 stats-collect:
   description: >
     Show row count and sample data from a BQ table.
@@ -121,14 +119,13 @@ stats-collect:
       }'
   command: run.local Args -y $YAMLPATH/polyconf.yaml -m stats-collect --rename-str Env--$Environment -f bigquery
 
-# Pub/Sub publish — admin
 pubsub-publish:
   description: >
     Publish messages from GCS to a Pub/Sub topic.
       spark.workflow.run polyconf-bqbased-pubsub-publish '{
         "rename_PUBSUB_TOPIC": "events-ingest"
       }'
-  command: run.local Args -y $YAMLPATH/polyconf.yaml -m pubsub-publish --rename-str Env--$Environment -f bigquery
+  command: run.local Args -y $YAMLPATH/polyconf.yaml -m pubsub-publish --rename-str Env--$Environment~~PUBSUB_TOPIC--$DEFAULT_PUBSUB_TOPIC -f bigquery
 
 stub:
   description: stub help — placeholder for blocked jobs
