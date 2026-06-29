@@ -49,7 +49,7 @@ bq2bq-sync:
     shellPrefix: ./run.sh run.spark
     additionalArgs:
       - -l
-      - "WARN,ERROR:org.apache,DEBUG:org.polyconf,PrintMaster"
+      - "WARN,ERROR:org.apache,DEBUG:org.polyconf"
     jobStr:
       CN: SparkTransformerJob
       appName: bq2bq-sync
@@ -101,7 +101,7 @@ delta2bq:
     shellPrefix: ./run.sh run.spark
     additionalArgs:
       - -l
-      - "WARN,ERROR:org.apache,INFO:org.polyconf,PrintMaster"
+      - "WARN,ERROR:org.apache,INFO:org.polyconf"
     jobStr:
       CN: SparkTransformerJob
       appName: delta2bq-import
@@ -217,7 +217,7 @@ full-reindex:
     shellPrefix: ./run.sh run.spark
     additionalArgs:
       - -l
-      - "WARN,ERROR:org.apache,DEBUG:org.polyconf,PrintMaster"
+      - "WARN,ERROR:org.apache,DEBUG:org.polyconf"
     jobStr:
       CN: SparkTransformerJob
       appName: full-reindex
@@ -263,7 +263,7 @@ incremental-update:
     shellPrefix: ./run.sh run.spark
     additionalArgs:
       - -l
-      - "WARN,ERROR:org.apache,INFO:org.polyconf,PrintMaster"
+      - "WARN,ERROR:org.apache,INFO:org.polyconf"
     jobStr:
       CN: SparkTransformerJob
       appName: incremental-update
@@ -345,7 +345,7 @@ stats-collect:
     shellPrefix: ./run.sh run.spark
     additionalArgs:
       - -l
-      - "WARN,ERROR:org.apache,INFO:org.polyconf,PrintMaster"
+      - "WARN,ERROR:org.apache,INFO:org.polyconf"
     jobStr:
       CN: SparkTransformerJob
       appName: stats-collect
