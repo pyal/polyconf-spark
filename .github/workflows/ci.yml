@@ -23,6 +23,8 @@ jobs:
           cache: sbt
       - uses: sbt/setup-sbt@v1
       - run: sbt test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
