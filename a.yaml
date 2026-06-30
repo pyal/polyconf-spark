@@ -1,0 +1,41 @@
+sparkStreamJob:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        OUTPUT_DIR: /tmp/spark-stream-out
+      local:
+        INPUT_DIR: scripts
+      sand:
+        INPUT_DIR: /data/sand/polyconf/scripts
+    defaultEnv: local
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    jobStr:
+      CN: SparkTransformerJob
+      appName: spark-stream-job
+      generator:
+        CN: StreamDataGenerator
+        delegate:
+          CN: SimpleDataGenerator
+          path: $INPUT_DIR/input.csv
+          format: csv
+      transformers:
+        - CN: SparkBasicTransformer
+          selectColumns: [id, name, age, city]
+        - CN: SparkBasicTransformer
+          sqlFilter: "age >= 18 AND city IS NOT NULL"
+          repartition: 8
+      writers:
+        - CN: StreamDataWriter
+          delegate:
+            CN: SimpleDataWriter
+            path: $OUTPUT_DIR/adults.json
+            format: json
+        - CN: StreamDataWriter
+          delegate:
+            CN: SimpleDataWriter
+            path: $OUTPUT_DIR/adults1.json
+            format: json            

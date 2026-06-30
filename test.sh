@@ -166,6 +166,26 @@ else
   failures=$((failures + 1))
 fi
 
+# ============================================================================
+# Test 6: sparkStreamJob — YAML→run.spark via assembly
+# ============================================================================
+run_exec_test "sparkStreamJob (assembly + spark-submit)" \
+  "./run.sh run.args --yamlPath $YAML::sparkStreamJob --execute" \
+  "rm -rf /tmp/spark-stream-out && mkdir -p /tmp/spark-stream-out"
+
+# ============================================================================
+# Test 7: sparkStreamJob — verify output files exist
+# ============================================================================
+run_json_test "sparkStreamJob (verify output)" \
+  "{\"CN\":\"SparkTransformerJob\",\"appName\":\"verify-stream\",\"generator\":{\"CN\":\"StreamDataGenerator\",\"delegate\":{\"CN\":\"SimpleDataGenerator\",\"path\":\"scripts/input.csv\",\"format\":\"csv\"}},\"transformers\":[{\"CN\":\"SparkBasicTransformer\",\"sqlFilter\":\"age >= 18 AND city IS NOT NULL\",\"selectColumns\":[\"name\",\"age\",\"city\"],\"repartition\":8}],\"writers\":[{\"CN\":\"StreamDataWriter\",\"delegate\":{\"CN\":\"SimpleDataWriter\",\"path\":\"/tmp/spark-stream-out-test7.json\",\"format\":\"json\"}}]}"
+
+check_7() {
+  local output="$1"
+  # Verify output file exists
+  [ -f /tmp/spark-stream-out-test7.json ] && return 0
+  return 1
+}
+
 echo ""
 echo "========================================================================"
 echo "  $total test(s) | $failures failure(s)"

@@ -21,7 +21,7 @@ lazy val commonSettings = Seq(
     "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED",
   ),
   libraryDependencies ++= Seq(
-    "com.github.pyal"                  %% "polyconf"             % "0.0.1",
+    "com.github.pyal"                  %% "polyconf"             % "0.0.2",
     "org.apache.spark"                 %% "spark-core"           % sparkVersion % Provided,
     "org.apache.spark"                 %% "spark-sql"            % sparkVersion % Provided,
     ("com.google.cloud.spark"           % "spark-bigquery-with-dependencies_2.13" % "0.39.1")

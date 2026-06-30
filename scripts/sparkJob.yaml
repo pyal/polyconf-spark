@@ -108,13 +108,11 @@ sparkStreamJob:
         CN: StreamDataGenerator
         delegate:
           CN: SimpleDataGenerator
-          path: $INPUT_DIR
-          format: json
-          options:
-            recursive: "true"
+          path: $INPUT_DIR/input.csv
+          format: csv
       transformers:
         - CN: SparkBasicTransformer
-          selectColumns: [id, name, age, city, timestamp]
+          selectColumns: [id, name, age, city]
         - CN: SparkBasicTransformer
           sqlFilter: "age >= 18 AND city IS NOT NULL"
           repartition: 8
