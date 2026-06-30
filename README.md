@@ -7,6 +7,94 @@ Adds Spark-native components to the polyconf pipeline model: generators that rea
 from distributed storage, transformers that operate on DataFrames, and writers for
 Spark datasources including BigQuery, PubSub, Elasticsearch, and Delta Lake.
 
+## Quick start
+
+### 1. Add the dependency
+
+```sbt
+libraryDependencies += "com.github.pyal" %% "polyconf-spark" % "0.0.1"
+```
+
+Also add `polyconf` (dependency is transitive, but declare it explicitly for clarity):
+
+```sbt
+libraryDependencies += "com.github.pyal" %% "polyconf" % "0.0.1"
+```
+
+### 2. Write your first Spark pipeline
+
+Create `sparkJob.yaml`:
+
+```yaml
+mySparkPipeline:
+  Renamer:
+    CN: JsonVariableInline
+    Env:
+      all:
+        OUTPUT_DIR: /tmp/spark-output
+      local:
+        INPUT_DIR: scripts
+    defaultEnv: local
+
+  Formatter:
+    CN: RunParamsGenerator
+    shellPrefix: ./run.sh run.spark
+    jobStr:
+      CN: SparkTransformerJob
+      appName: mySparkPipeline
+      generator:
+        CN: StreamDataGenerator
+        inner:
+          CN: SimpleDataGenerator
+          path: $INPUT_DIR/input.csv
+          format: csv
+      transformers:
+        - CN: SparkBasicTransformer
+          select: [id, name, age]
+      writers:
+        - CN: StreamDataWriter
+          inner:
+            CN: SimpleDataWriter
+            path: $OUTPUT_DIR/result.json
+            format: json
+```
+
+### 3. Run it
+
+```bash
+# Clone, build, and run:
+git clone https://github.com/pyal/polyconf-spark.git
+cd polyconf-spark
+
+# Skip — polyconf is now a published dependency, resolved automatically
+
+# Build the assembly JAR:
+sbt assembly
+
+# Generate a spark-submit command from YAML and execute it:
+SPARK_MASTER=local[1] ./run.sh run.args --yamlPath sparkJob.yaml::mySparkPipeline --execute
+```
+
+Or use the library directly from your own Spark project:
+
+```scala
+import org.polyconf.core.PolyConf
+
+val config = """{"CN":"SparkTransformerJob","appName":"myJob","generator":{"CN":"SparkGeneratorImpl","path":"/data/in","format":"csv"},"writers":[{"CN":"SparkWriterImpl","path":"/data/out","format":"parquet"}]}"""
+val job = PolyConf.deserializeRunner(config)
+job.run()
+```
+
+(Spark dependencies must be on the classpath at runtime — they are `Provided` scope in the build.)
+
+## Next steps
+
+- **[Architecture](#architecture)** — DFData, SparkTransformerJob, generators, transformers, writers
+- **[Datasources](#datasources)** — BigQuery, PubSub, Elasticsearch, Delta, and file formats
+- **[`run.sh`](#runsh--cli-entry-point)** — Spark CLI modes (local, spark-submit, dev/prod)
+- **[`test.sh`](#testsh--end-to-end-integration-tests)** — integration testing for Spark pipelines
+- **[Distributed logging](#distributed-logging)** — executor log capture via SparkLogRelay
+
 ## Architecture
 
 ### `DFData` — DataFrame wrapper with deferred row counting

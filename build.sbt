@@ -1,6 +1,6 @@
 val scala213 = "2.13.16"
 val sparkVersion = "4.1.2"
-val jacksonVersion = "2.15.2"
+val jacksonVersion = "2.18.8"
 val scalaTestVersion = "3.2.19"
 
 lazy val commonSettings = Seq(
@@ -18,7 +18,7 @@ lazy val commonSettings = Seq(
     "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED",
   ),
   libraryDependencies ++= Seq(
-    "com.github.pyal"                  %% "polyconf"             % "0.1.0-SNAPSHOT",
+    "com.github.pyal"                  %% "polyconf"             % "0.0.1",
     "org.apache.spark"                 %% "spark-core"           % sparkVersion % Provided,
     "org.apache.spark"                 %% "spark-sql"            % sparkVersion % Provided,
     ("com.google.cloud.spark"           % "spark-bigquery-with-dependencies_2.13" % "0.39.1")
@@ -53,7 +53,7 @@ lazy val publishSettings = Seq(
   ),
   credentials ++= {
     val envToken = sys.env.get("GITHUB_TOKEN").filter(_.nonEmpty).map { token =>
-      Credentials("GitHub Packages", "maven.pkg.github.com", "pyal", token)
+      Credentials("GitHub Package Registry", "maven.pkg.github.com", "pyal", token)
     }
     val fileCreds = {
       val credFile = Path.userHome / ".sbt" / ".github-credentials"
