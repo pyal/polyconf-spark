@@ -5,6 +5,9 @@ val scalaTestVersion = "3.2.19"
 
 lazy val commonSettings = Seq(
   organization := "com.github.pyal",
+  resolvers ++= Seq(
+    "polyconf" at "https://maven.pkg.github.com/pyal/polyconf",
+  ),
   scalaVersion := scala213,
   crossScalaVersions := Seq(scala213),
   scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked", "-Xfatal-warnings"),
